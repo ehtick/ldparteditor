@@ -1324,6 +1324,7 @@ public class MiscToolItem extends ToolItem {
                     break;
                 case TWO_THIRDS:
                 default:
+                    regainFocus();
                     return;
                 }
                 
@@ -1334,13 +1335,31 @@ public class MiscToolItem extends ToolItem {
                 
                 final VertexManager vm = c3d.getLockableDatFileReference().getVertexManager();
                 final float gridSize = c3d.getGridSize();
-                final Set<Vertex> sv = vm.getSelectedVertices();
+                final Set<Vertex> selectedVertices = new TreeSet<>(vm.getSelectedVertices());
                 
                 NLogger.debug(MiscToggleToolItem.class, "Grid size   :" + gridSize + " LDU"); //$NON-NLS-1$ //$NON-NLS-2$
-                NLogger.debug(MiscToggleToolItem.class, "Vertex count:" + sv.size()); //$NON-NLS-1$
+                NLogger.debug(MiscToggleToolItem.class, "Vertex count:" + selectedVertices.size()); //$NON-NLS-1$
                 
-                // FIXME Needs implementation!
+                vm.addSnapshot();
+                
+                final BigDecimal gridSizePrecise = BigDecimal.valueOf(gridSize);
+                
+                boolean modified = false;
+                for (Vertex v : selectedVertices) {
+                    final BigDecimal newX = snapOnX ? snapToNearest(gridSize, gridSizePrecise, v.xp.abs()).multiply(new BigDecimal(v.xp.signum())) : v.xp;
+                    final BigDecimal newY = snapOnY ? snapToNearest(gridSize, gridSizePrecise, v.yp.abs()).multiply(new BigDecimal(v.yp.signum())) : v.yp;
+                    final BigDecimal newZ = snapOnZ ? snapToNearest(gridSize, gridSizePrecise, v.zp.abs()).multiply(new BigDecimal(v.zp.signum())) : v.zp;
+                    
+                    modified = vm.changeVertexDirectFast(v, new Vertex(new BigDecimal[]{newX, newY, newZ}), true) || modified;
+                }
+                
+                if (modified && !selectedVertices.isEmpty()) {
+                    NLogger.debug(MiscToggleToolItem.class, "Snapping done"); //$NON-NLS-1$
+                    vm.syncWithTextEditors(true);
+                }
             }
+            
+            regainFocus();
         });
 
         widgetUtil(mntmSelectSingleVertexPtr[0]).addSelectionListener(e -> {
@@ -3022,6 +3041,18 @@ public class MiscToolItem extends ToolItem {
             regainFocus();
         });
 
+    }
+
+    private static BigDecimal snapToNearest(final float gridSize, final BigDecimal gridSizePrecise, BigDecimal v) {
+        float value = v.floatValue();
+        float distA = value % gridSize;
+        float distB = gridSize - value % gridSize;
+        
+        if (distA <= distB) {
+            return v.subtract(v.remainder(gridSizePrecise, Threshold.MC));
+        } else {
+            return v.add(gridSizePrecise.subtract(v.remainder(gridSizePrecise, Threshold.MC)));
+        }
     }
 
     private static void regainFocus() {
